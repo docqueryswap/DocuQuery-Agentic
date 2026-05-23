@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DocuQuery Agentic | FastAPI + Streaming</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', system-ui, sans-serif; background: #f8fafc; padding: 2rem 1.5rem; color: #1e293b; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .app-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; flex-wrap: wrap; }
+        .app-header h1 { font-size: 2.2rem; font-weight: 700; background: linear-gradient(145deg, #1e4a7a, #2c6e9c); -webkit-background-clip: text; background-clip: text; color: transparent; }
+        .badge { background: #e6f7e6; color: #1e7a1e; padding: 0.4rem 1rem; border-radius: 40px; font-weight: 500; }
+        .main-grid { display: grid; grid-template-columns: 380px 1fr; gap: 1.8rem; }
+        @media (max-width: 900px) { .main-grid { grid-template-columns: 1fr; } }
+        .card { background: white; border-radius: 24px; padding: 1.8rem; box-shadow: 0 8px 20px rgba(0,0,0,0.02); border: 1px solid #e9edf2; margin-bottom: 1.8rem; }
+        .card-title { font-size: 1.3rem; font-weight: 600; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 10px; color: #0b2a41; }
+        .upload-area { border: 2px dashed #cbd5e1; border-radius: 20px; padding: 2rem; text-align: center; background: #fafcff; cursor: pointer; }
+        .upload-area:hover { border-color: #2c6e9c; }
+        .file-name { margin-top: 1rem; font-size: 0.9rem; }
+        .action-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 1.8rem 0; }
+        .action-btn { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 16px; padding: 1rem 0.5rem; text-align: center; font-weight: 500; cursor: pointer; }
+        .action-btn i { display: block; font-size: 1.5rem; margin-bottom: 6px; color: #1e4a7a; }
+        .action-btn.active { background: #1e4a7a; color: white; border-color: #1e4a7a; }
+        .action-btn.active i { color: white; }
+        .query-input { width: 100%; padding: 14px; border: 1px solid #cbd5e1; border-radius: 16px; margin: 1rem 0; }
+        .primary-btn { background: #1e4a7a; color: white; border: none; border-radius: 40px; padding: 14px 24px; font-weight: 600; width: 100%; cursor: pointer; margin-bottom: 8px; }
+        .secondary-btn { background: #64748b; color: white; border: none; border-radius: 40px; padding: 14px 24px; font-weight: 600; width: 100%; cursor: pointer; }
+        .output-panel { background: white; border-radius: 24px; border: 1px solid #e9edf2; min-height: 500px; display: flex; flex-direction: column; }
+        .output-header { padding: 1.2rem 1.8rem; border-bottom: 1px solid #e9edf2; }
+        .output-content { padding: 1.8rem; flex: 1; white-space: pre-wrap; overflow-y: auto; }
+        .citation { background: #eef6ff; border-radius: 12px; padding: 0.8rem 1.2rem; margin: 1rem 1.8rem 1.8rem; border-left: 4px solid #1e4a7a; }
+        .status-bar { margin-top: 1rem; color: #64748b; }
+        .stream-box { background: #f1f5f9; border-radius: 12px; padding: 12px; margin-top: 12px; font-family: monospace; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="app-header">
+        <div>
+            <h1>🦙 DocuQuery Agentic</h1>
+            <p>Upload · Summarize · Ask · Correlate · Report · Edit · Stream (FastAPI)</p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 20px;">
+            <div class="badge"><i class="fas fa-circle-check"></i> 100% free · Groq + Pinecone</div>
+            <div class="badge"><i class="fas fa-user-secret"></i> Private workspace</div>
+        </div>
+    </div>
+    <div class="main-grid">
+        <div>
+            <div class="card">
+                <div class="card-title"><i class="fas fa-cloud-upload-alt"></i> 1️⃣ Upload Document</div>
+                <div class="upload-area" id="uploadArea">
+                    <i class="fas fa-file-pdf"></i><p>Drag & drop or click to browse</p>
+                    <input type="file" id="fileInput" accept=".pdf,.docx,.txt" style="display: none;">
+                </div>
+                <div class="file-name" id="fileName">No file selected</div>
+                <div id="uploadStatus"></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><i class="fas fa-bolt"></i> 2️⃣ Choose Action</div>
+                <div class="action-grid">
+                    <div class="action-btn active" data-action="summarize"><i class="fas fa-file-alt"></i> Summarize</div>
+                    <div class="action-btn" data-action="ask"><i class="fas fa-question-circle"></i> Ask</div>
+                    <div class="action-btn" data-action="correlate"><i class="fas fa-globe"></i> Correlate</div>
+                    <div class="action-btn" data-action="report"><i class="fas fa-chart-bar"></i> Report</div>
+                    <div class="action-btn" data-action="edit"><i class="fas fa-pen-fancy"></i> Edit</div>
+                </div>
+                <input type="text" class="query-input" id="queryInput" placeholder="Document will be summarized automatically">
+                <select id="styleSelect" style="width:100%; padding:8px; margin-bottom:1rem; border-radius:12px;">
+                    <option value="default">Default tone</option>
+                    <option value="kid">🧒 Explain like I'm 5</option>
+                    <option value="legal">⚖️ Legal</option>
+                    <option value="short">📝 Short</option>
+                </select>
+                <button class="primary-btn" id="executeBtn"><i class="fas fa-play"></i> Execute</button>
+                <button class="secondary-btn" id="streamCorrelateBtn"><i class="fas fa-stream"></i> Stream Correlate (Live)</button>
+            </div>
+            <div class="status-bar"><i class="fas fa-database"></i> Pinecone: <strong>multiagent</strong> · Groq ready · FastAPI SSE</div>
+        </div>
+        <div class="output-panel">
+            <div class="output-header"><h3><i class="fas fa-terminal"></i> Output</h3> <span id="actionLabel">Mode: Summarize</span></div>
+            <div class="output-content" id="outputContent">Upload a document to begin.</div>
+            <div class="citation" id="citationBox" style="display:none;"><i class="fas fa-link"></i> <strong>Sources:</strong> <span id="sourceList"></span></div>
+        </div>
+    </div>
+</div>
+<script>
+    // Generate or retrieve client_id
+    let clientId = localStorage.getItem('docuquery_client_id');
+    if (!clientId) {
+        clientId = crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+            const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+        localStorage.setItem('docuquery_client_id', clientId);
+    }
+    console.log('Client ID:', clientId);
+
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    const fileName = document.getElementById('fileName');
+    const uploadStatus = document.getElementById('uploadStatus');
+    const actionBtns = document.querySelectorAll('.action-btn');
+    const queryInput = document.getElementById('queryInput');
+    const executeBtn = document.getElementById('executeBtn');
+    const streamCorrelateBtn = document.getElementById('streamCorrelateBtn');
+    const outputContent = document.getElementById('outputContent');
+    const actionLabel = document.getElementById('actionLabel');
+    const citationBox = document.getElementById('citationBox');
+    const sourceList = document.getElementById('sourceList');
+    const styleSelect = document.getElementById('styleSelect');
+
+    let currentAction = 'summarize';
+    let uploadedFileName = '';
+
+    uploadArea.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', async (e) => {
+        if (!e.target.files.length) return;
+        const file = e.target.files[0];
+        uploadedFileName = file.name;
+        fileName.textContent = `📄 ${uploadedFileName}`;
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('client_id', clientId);
+        uploadStatus.innerHTML = '⏳ Processing...';
+        try {
+            const res = await fetch('/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.error) {
+                uploadStatus.innerHTML = `❌ ${data.error}`;
+            } else {
+                uploadStatus.innerHTML = `✅ ${data.message}`;
+                outputContent.innerHTML = '✅ Document ready. Choose an action.';
+            }
+        } catch { uploadStatus.innerHTML = '❌ Upload failed'; }
+    });
+
+    actionBtns.forEach(btn => btn.addEventListener('click', () => {
+        actionBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentAction = btn.dataset.action;
+        actionLabel.textContent = `Mode: ${btn.textContent.trim()}`;
+        queryInput.placeholder = currentAction === 'summarize' ? 'Document will be summarized automatically' :
+            currentAction === 'ask' ? 'Ask a question...' :
+            currentAction === 'correlate' ? 'e.g., Compare with industry trends' :
+            currentAction === 'report' ? 'Generate a report' : 'e.g., Add skills section...';
+    }));
+
+    executeBtn.addEventListener('click', async () => {
+        if (!uploadedFileName) { outputContent.innerHTML = 'Please upload a document first.'; return; }
+        const query = queryInput.value.trim();
+        outputContent.innerHTML = 'Processing...';
+        citationBox.style.display = 'none';
+        try {
+            let res, data;
+            const payload = { client_id: clientId };
+            if (currentAction === 'summarize') {
+                res = await fetch('/summarize', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+            } else if (currentAction === 'ask') {
+                if (!query) throw new Error('Enter a question');
+                payload.question = query;
+                payload.style = styleSelect.value;
+                res = await fetch('/ask', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+            } else if (currentAction === 'correlate') {
+                payload.query = query;
+                res = await fetch('/correlate', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+            } else if (currentAction === 'report') {
+                res = await fetch('/report', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+            } else if (currentAction === 'edit') {
+                if (!query) throw new Error('Enter edit instruction');
+                payload.instruction = query;
+                res = await fetch('/edit', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+                if (res.headers.get('content-type')?.includes('application/json')) {
+                    data = await res.json();
+                    throw new Error(data.error);
+                }
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = `edited_${uploadedFileName.replace(/\.[^/.]+$/, '')}.docx`;
+                a.click(); URL.revokeObjectURL(url);
+                outputContent.innerHTML = `<h3>✏️ Edited</h3><p>Document downloaded.</p>`;
+                return;
+            }
+            data = await res.json();
+            if (data.error) throw new Error(data.error);
+            if (currentAction === 'summarize') outputContent.innerHTML = `<h3>📄 Summary</h3><p>${data.summary}</p>`;
+            else if (currentAction === 'ask') outputContent.innerHTML = `<h3>❓ Answer</h3><p>${data.answer}</p>`;
+            else if (currentAction === 'correlate') {
+                outputContent.innerHTML = `<h3>🌐 Correlation</h3><p>${data.analysis}</p>`;
+                if (data.sources?.length) { citationBox.style.display = 'block'; sourceList.textContent = data.sources.join(', '); }
+            }
+            else if (currentAction === 'report') outputContent.innerHTML = `<h3>📊 Report</h3><pre>${data.report}</pre>`;
+        } catch (e) { outputContent.innerHTML = `Error: ${e.message}`; }
+    });
+
+    // FastAPI Streaming Correlation (SSE)
+    streamCorrelateBtn.addEventListener('click', () => {
+        if (!uploadedFileName) {
+            outputContent.innerHTML = 'Please upload a document first.';
+            return;
+        }
+        const query = queryInput.value.trim();
+        if (!query) {
+            outputContent.innerHTML = 'Please enter a research query for correlation.';
+            return;
+        }
+        outputContent.innerHTML = '<h3>🌐 Live Correlation (SSE)</h3><div id="streamOutput" class="stream-box">Connecting...</div>';
+        const streamDiv = document.getElementById('streamOutput');
+        streamDiv.innerHTML = '';
+
+        const eventSource = new EventSource(`/correlate/stream?query=${encodeURIComponent(query)}&client_id=${encodeURIComponent(clientId)}`);
+
+        eventSource.addEventListener('connected', (e) => {
+            streamDiv.innerHTML += `<p>🔗 ${e.data}</p>`;
+        });
+        eventSource.addEventListener('status', (e) => {
+            streamDiv.innerHTML += `<p>🔄 ${e.data}</p>`;
+        });
+        eventSource.addEventListener('result', (e) => {
+            const data = JSON.parse(e.data);
+            streamDiv.innerHTML += `<h4>✅ Analysis Complete</h4><p>${data.analysis}</p>`;
+            if (data.sources && data.sources.length) {
+                streamDiv.innerHTML += `<p><strong>Sources:</strong> ${data.sources.join(', ')}</p>`;
+                citationBox.style.display = 'block';
+                sourceList.textContent = data.sources.join(', ');
+            }
+            eventSource.close();
+        });
+        eventSource.addEventListener('error', (e) => {
+            let errorMsg = 'Unknown error';
+            try {
+                const parsed = JSON.parse(e.data);
+                errorMsg = parsed.detail || parsed.error || e.data;
+            } catch {
+                errorMsg = e.data || 'Connection error';
+            }
+            streamDiv.innerHTML += `<p style="color: red;">❌ Error: ${errorMsg}</p>`;
+            eventSource.close();
+        });
+        eventSource.onerror = () => {
+            if (eventSource.readyState === EventSource.CLOSED) return;
+            streamDiv.innerHTML += `<p style="color: red;">❌ Connection lost.</p>`;
+            eventSource.close();
+        };
+    });
+</script>
+</body>
+</html>
